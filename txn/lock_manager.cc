@@ -66,29 +66,78 @@ LockManagerB::LockManagerB(deque<Txn*>* ready_txns) {
 }
 
 bool LockManagerB::WriteLock(Txn* txn, const Key& key) {
-  // CPSC 438/538:
-  //
-  // Implement this method!
-  return true;
+
+  // Initialize the deque if it doesn't exist
+  LockRequest l(EXCLUSIVE, txn);
+  if (lock_table_.count(key))
+    lock_table_[key]->push_back(l);
+  else {
+    deque<LockRequest> *my_queue = new deque<LockRequest>(1, l);
+    lock_table_[key] = my_queue;
+  }
+
+  if (lock_table_[key]->front().txn_ == txn)
+    // since it's the only transaction that wants the lock, say ok to start
+    return true;
+  else {
+    // initialize or increment the number of locks to wait for
+    if (txn_waits_.count(txn))
+      txn_waits_[txn] = 1;
+    else txn_waits_[txn]++;
+    return false;
+  }
 }
 
 bool LockManagerB::ReadLock(Txn* txn, const Key& key) {
-  // CPSC 438/538:
-  //
-  // Implement this method!
+  LockRequest l(SHARED, txn);
+  if (lock_table_.count(key))
+    lock_table_[key]->push_back(l);
+  else {
+    deque<LockRequest> *my_queue = new deque<LockRequest>(1, l);
+    lock_table_[key] = my_queue;
+  }
+  deque<LockRequest>::iterator i;
+  for (i=requests->begin(); i != requests->end(); i++) {
+    if (i->mode == EXCLUSIVE) {
+      if (txn_waits_.count(txn))
+        txn_waits_[txn] = 1;
+      else txn_waits_[txn]++;
+      return false;
+    }
+  }
   return true;
 }
 
 void LockManagerB::Release(Txn* txn, const Key& key) {
-  // CPSC 438/538:
-  //
-  // Implement this method!
+  // THIS NEEDS TO BE DONE!
+
+  bool hadLock;
+  deque<LockRequest> *requests = lock_table_[key];
+  deque<LockRequest>::iterator i;
+  for (i=requests->begin(); i != requests->end(); i++) {
+    if (i->txn_ == txn) {
+      hadLock = (requests->front().txn_ == txn);
+      requests->erase(i);
+      break;
+    }
+  }
+  if (requests->size() >= 1 && hadLock) {
+    Txn *to_start = requests->front().txn_;
+    if (--txn_waits_[to_start] == 0) ready_txns_->push_back(to_start);
+  }
 }
 
 LockMode LockManagerB::Status(const Key& key, vector<Txn*>* owners) {
-  // CPSC 438/538:
-  //
-  // Implement this method!
-  return UNLOCKED;
+  deque<LockRequest>::iterator i;
+  owners->clear();
+  if (lock_table_[key]->size() == 0) return UNLOCKED;
+  if (lock_table_[key]->begin()->mode == EXCLUSIVE) {
+    owners->push_back(lock_table_[key]->begin()->txn_);
+    return EXCLUSIVE;
+  }
+  deque<LockRequest>::iterator i;
+  for (i=requests->begin(); i != requests->end() && i->mode == SHARED; i++) {
+    owners->push_back(i->txn_);
+  }
+  return SHARED;
 }
-
