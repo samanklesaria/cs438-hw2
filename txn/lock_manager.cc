@@ -30,15 +30,16 @@ bool LockManagerA::ReadLock(Txn* txn, const Key& key) {
 
 void LockManagerA::Release(Txn* txn, const Key& key) {
   deque<LockRequest> *requests = lock_table_[key];
+  deque<LockRequest>::iterator i;
   for (i=requests->begin(); i != requests->end(); i++) {
     if (i->txn_ == txn) {
-      requests.erase(i);
+      requests->erase(i);
       break;
     }
   }
   if (requests->size() == 1) {
     Txn *to_start = requests->front().txn_;
-    --txn_waits_[to_start] || ready_txns->push_back(to_start);
+    if (--txn_waits_[to_start] == 0) ready_txns_->push_back(to_start);
   }
 }
 
@@ -46,7 +47,7 @@ LockMode LockManagerA::Status(const Key& key, vector<Txn*>* owners) {
   deque<LockRequest>::iterator i;
   owners->clear();
   for (i=lock_table_[key]->begin(); i != lock_table_[key]->end(); i++)
-    owners->push_back(*i);
+    owners->push_back(i->txn_);
   return owners->empty() ? UNLOCKED : EXCLUSIVE;
 }
 
