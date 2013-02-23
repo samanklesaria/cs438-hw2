@@ -89,6 +89,8 @@ bool LockManagerB::WriteLock(Txn* txn, const Key& key) {
 }
 
 bool LockManagerB::ReadLock(Txn* txn, const Key& key) {
+  deque<LockRequest> *requests = lock_table_[key];
+
   LockRequest l(SHARED, txn);
   if (lock_table_.count(key))
     lock_table_[key]->push_back(l);
@@ -98,7 +100,7 @@ bool LockManagerB::ReadLock(Txn* txn, const Key& key) {
   }
   deque<LockRequest>::iterator i;
   for (i=requests->begin(); i != requests->end(); i++) {
-    if (i->mode == EXCLUSIVE) {
+    if (i->mode_ == EXCLUSIVE) {
       if (txn_waits_.count(txn))
         txn_waits_[txn] = 1;
       else txn_waits_[txn]++;
@@ -109,34 +111,44 @@ bool LockManagerB::ReadLock(Txn* txn, const Key& key) {
 }
 
 void LockManagerB::Release(Txn* txn, const Key& key) {
-  // THIS NEEDS TO BE DONE!
 
   bool hadLock;
+  LockMode hadMode;
   deque<LockRequest> *requests = lock_table_[key];
   deque<LockRequest>::iterator i;
   for (i=requests->begin(); i != requests->end(); i++) {
     if (i->txn_ == txn) {
       hadLock = (requests->front().txn_ == txn);
+      hadMode = requests->front().mode_;
       requests->erase(i);
       break;
     }
   }
+
+  // if we took away a shared lock and the next is exclusive, start it
+  // if we took away an exclusive lock, start all the shared locks after it
   if (requests->size() >= 1 && hadLock) {
-    Txn *to_start = requests->front().txn_;
-    if (--txn_waits_[to_start] == 0) ready_txns_->push_back(to_start);
+    if (hadMode == SHARED && requests->front().mode_ == EXCLUSIVE) {
+      Txn *to_start = requests->front().txn_;
+      if (--txn_waits_[to_start] == 0) ready_txns_->push_back(to_start);
+    } else if (hadMode == EXCLUSIVE) {
+      for (i=requests->begin() + 1; i != requests->end() && i->mode_ == SHARED; i++)
+        if (--txn_waits_[i->txn_] == 0) ready_txns_->push_back(i->txn_);
+    }
   }
+
 }
 
 LockMode LockManagerB::Status(const Key& key, vector<Txn*>* owners) {
-  deque<LockRequest>::iterator i;
   owners->clear();
   if (lock_table_[key]->size() == 0) return UNLOCKED;
-  if (lock_table_[key]->begin()->mode == EXCLUSIVE) {
+  if (lock_table_[key]->begin()->mode_ == EXCLUSIVE) {
     owners->push_back(lock_table_[key]->begin()->txn_);
     return EXCLUSIVE;
   }
   deque<LockRequest>::iterator i;
-  for (i=requests->begin(); i != requests->end() && i->mode == SHARED; i++) {
+  deque<LockRequest> *requests = lock_table_[key];
+  for (i=requests->begin(); i != requests->end() && i->mode_ == SHARED; i++) {
     owners->push_back(i->txn_);
   }
   return SHARED;
