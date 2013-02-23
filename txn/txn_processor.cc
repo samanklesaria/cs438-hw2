@@ -160,11 +160,53 @@ void TxnProcessor::RunOCCScheduler() {
   // Implement this method! Note that implementing OCC may require
   // modifications to the Storage engine (and therefore to the 'ExecuteTxn'
   // method below).
-  //
-  // [For now, run serial scheduler in order to make it through the test
-  // suite]
 
-  RunSerialScheduler();
+  Txn* txn;
+  while (tp_.Active()) {
+    // Start processing the next incoming transaction request.
+    if (txn_requests_.Pop(&txn)) {
+      txn->occ_start_time = GetTime();
+      // also map last modified of all in write set to current time
+      tp_.RunTask(new Method<TxnProcessor, void, Txn*>(
+            this,
+            &TxnProcessor::ExecuteTxn,
+            txn));
+    }
+
+    // Verify all completed transactions
+    bool verified = true;
+    while (completed_txns_.Pop(&txn)) {
+      for (set<Key>::iterator it = txn->readset_.begin();
+           it != txn->readset_.end(); ++it) {
+        // if last modified > my start
+        // verified = false;
+      }
+      for (set<Key>::iterator it = txn->writeset_.begin();
+           it != txn->writeset_.end(); ++it) {
+        // if last modified > my start
+        // verified = false;
+      }
+
+      // Commit/abort txn according to program logic's commit/abort decision.
+      if (txn->Status() == COMPLETED_C) {
+        if (verified) {
+          ApplyWrites(txn);
+          txn->status_ = COMMITTED;
+        } else {
+          // reset the transaction somehow
+          txn_requests_.Push(&txn);
+        }
+      } else if (txn->Status() == COMPLETED_A) {
+        txn->status_ = ABORTED;
+      } else {
+        // Invalid TxnStatus!
+        DIE("Completed Txn has invalid TxnStatus: " << txn->Status());
+      }
+
+      // Return result to client.
+      txn_results_.Push(txn);
+    }
+  }
 }
 
 void TxnProcessor::RunOCCParallelScheduler() {
