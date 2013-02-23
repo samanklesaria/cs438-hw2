@@ -14,7 +14,6 @@ bool LockManagerA::WriteLock(Txn* txn, const Key& key) {
   if (lock_table_.count(key))
     lock_table_[key]->push_back(l);
   else {
-    // this never gets deleted. problem?
     deque<LockRequest> *my_queue = new deque<LockRequest>(1, l);
     lock_table_[key] = my_queue;
   }
@@ -53,8 +52,9 @@ void LockManagerA::Release(Txn* txn, const Key& key) {
 LockMode LockManagerA::Status(const Key& key, vector<Txn*>* owners) {
   deque<LockRequest>::iterator i;
   owners->clear();
-  for (i=lock_table_[key]->begin(); i != lock_table_[key]->end(); i++)
-    owners->push_back(i->txn_);
+  owners->push_back(lock_table_[key].begin());
+  // for (i=lock_table_[key]->begin(); i != lock_table_[key]->end(); i++)
+  //  owners->push_back(i->txn_);
   return owners->empty() ? UNLOCKED : EXCLUSIVE;
 }
 
