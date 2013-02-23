@@ -4,6 +4,7 @@
 // 'The Case for Determinism in Database Systems'.
 
 #include "txn/lock_manager.h"
+#include <assert.h>
 
 LockManagerA::LockManagerA(deque<Txn*>* ready_txns) {
   ready_txns_ = ready_txns;
@@ -34,16 +35,17 @@ bool LockManagerA::ReadLock(Txn* txn, const Key& key) {
 }
 
 void LockManagerA::Release(Txn* txn, const Key& key) {
-
+  bool hadLock;
   deque<LockRequest> *requests = lock_table_[key];
   deque<LockRequest>::iterator i;
   for (i=requests->begin(); i != requests->end(); i++) {
     if (i->txn_ == txn) {
+      hadLock = (requests->front().txn_ == txn);
       requests->erase(i);
       break;
     }
   }
-  if (requests->size() == 1) {
+  if (requests->size() >= 1 && hadLock) {
     Txn *to_start = requests->front().txn_;
     if (--txn_waits_[to_start] == 0) ready_txns_->push_back(to_start);
   }
@@ -52,7 +54,8 @@ void LockManagerA::Release(Txn* txn, const Key& key) {
 LockMode LockManagerA::Status(const Key& key, vector<Txn*>* owners) {
   deque<LockRequest>::iterator i;
   owners->clear();
-  owners->push_back(lock_table_[key].begin());
+  if (lock_table_[key]->size() != 0)
+    owners->push_back(lock_table_[key]->begin()->txn_);
   // for (i=lock_table_[key]->begin(); i != lock_table_[key]->end(); i++)
   //  owners->push_back(i->txn_);
   return owners->empty() ? UNLOCKED : EXCLUSIVE;
