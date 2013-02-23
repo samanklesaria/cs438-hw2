@@ -155,59 +155,71 @@ void TxnProcessor::RunLockingScheduler() {
 }
 
 void TxnProcessor::RunOCCScheduler() {
-  // CPSC 438/538:
-  //
-  // Implement this method! Note that implementing OCC may require
-  // modifications to the Storage engine (and therefore to the 'ExecuteTxn'
-  // method below).
 
-  // Txn* txn;
-  // while (tp_.Active()) {
-  //   // Start processing the next incoming transaction request.
-  //   if (txn_requests_.Pop(&txn)) {
-  //     txn->occ_start_time = GetTime();
-  //     // also map last modified of all in write set to current time
-  //     tp_.RunTask(new Method<TxnProcessor, void, Txn*>(
-  //           this,
-  //           &TxnProcessor::ExecuteTxn,
-  //           txn));
-  //   }
+  Txn* txn;
+  while (tp_.Active()) {
+    // Start processing the next incoming transaction request.
+    if (txn_requests_.Pop(&txn)) {
+      txn->occ_start_time_ = GetTime();
+      tp_.RunTask(new Method<TxnProcessor, void, Txn*>(
+            this,
+            &TxnProcessor::ExecuteTxn,
+            txn));
+    }
 
-  //   // Verify all completed transactions
-  //   bool verified = true;
-  //   while (completed_txns_.Pop(&txn)) {
-  //     for (set<Key>::iterator it = txn->readset_.begin();
-  //          it != txn->readset_.end(); ++it) {
-  //       // if last modified > my start
-  //       // verified = false;
-  //     }
-  //     for (set<Key>::iterator it = txn->writeset_.begin();
-  //          it != txn->writeset_.end(); ++it) {
-  //       // if last modified > my start
-  //       // verified = false;
-  //     }
+    // Verify all completed transactions
+    bool verified = true;
+    while (completed_txns_.Pop(&txn)) {
 
-  //     // Commit/abort txn according to program logic's commit/abort decision.
-  //     if (txn->Status() == COMPLETED_C) {
-  //       if (verified) {
-  //         ApplyWrites(txn);
-  //         txn->status_ = COMMITTED;
-  //       } else {
-  //         // reset the transaction somehow
-  //         txn_requests_.Push(&txn);
-  //       }
-  //     } else if (txn->Status() == COMPLETED_A) {
-  //       txn->status_ = ABORTED;
-  //     } else {
-  //       // Invalid TxnStatus!
-  //       DIE("Completed Txn has invalid TxnStatus: " << txn->Status());
-  //     }
+      // check for overlap in readset
+      for (set<Key>::iterator it = txn->readset_.begin();
+           it != txn->readset_.end(); ++it) {
 
-  //     // Return result to client.
-  //     txn_results_.Push(txn);
-  //   }
-  // }
-  RunSerialScheduler();
+        // if last modified > my start then invalid
+        if (storage_.Timestamp(*it) > txn->occ_start_time_) {
+          verified = false;
+          break;
+        }
+
+      }
+
+      // check for overlap in writeset
+      for (set<Key>::iterator it = txn->writeset_.begin();
+           it != txn->writeset_.end(); ++it) {
+
+        // if last modified > my start then invalid
+        if (storage_.Timestamp(*it) > txn->occ_start_time_) {
+          verified = false;
+          break;
+        }
+
+      }
+
+      // Commit/abort txn according to program logic's commit/abort decision.
+      if (txn->Status() == COMPLETED_C) {
+        if (verified) {
+
+          // Everything is hunky dory
+          ApplyWrites(txn);
+          txn->status_ = COMMITTED;
+
+        } else {
+
+          // Try transaction again
+          NewTxnRequest(txn);
+
+        }
+      } else if (txn->Status() == COMPLETED_A) {
+        txn->status_ = ABORTED;
+      } else {
+        // Invalid TxnStatus!
+        DIE("Completed Txn has invalid TxnStatus: " << txn->Status());
+      }
+
+      // Return result to client.
+      txn_results_.Push(txn);
+    }
+  }
 }
 
 void TxnProcessor::RunOCCParallelScheduler() {
@@ -224,6 +236,11 @@ void TxnProcessor::RunOCCParallelScheduler() {
 }
 
 void TxnProcessor::ExecuteTxn(Txn* txn) {
+  
+  // wipe reads_ and writes_
+  txn->reads_.clear();
+  txn->writes_.clear();
+
   // Read everything in from readset.
   for (set<Key>::iterator it = txn->readset_.begin();
        it != txn->readset_.end(); ++it) {
@@ -247,6 +264,7 @@ void TxnProcessor::ExecuteTxn(Txn* txn) {
 
   // Hand the txn back to the RunScheduler thread.
   completed_txns_.Push(txn);
+
 }
 
 void TxnProcessor::ApplyWrites(Txn* txn) {

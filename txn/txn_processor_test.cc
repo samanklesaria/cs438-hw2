@@ -1,11 +1,64 @@
 // Author: Alexander Thomson (thomson@cs.yale.edu)
 
 #include "txn/txn_processor.h"
+#include "txn/txn.h"
 
 #include <vector>
+#include <string>
 
 #include "txn/txn_types.h"
 #include "utils/testing.h"
+
+TEST(NoopTest) {
+  TxnProcessor p(OCC);
+
+  Txn* t = new Noop();
+  EXPECT_EQ(INCOMPLETE, t->Status());
+
+  p.NewTxnRequest(t);
+  p.GetTxnResult();
+
+  EXPECT_EQ(COMMITTED, t->Status());
+  delete t;
+
+  END;
+}
+
+TEST(PutTest) {
+  TxnProcessor p(OCC);
+  Txn* t;
+
+  map<long unsigned int, long unsigned int> m = {{1,2}, {3,4}, {5,6}, {7,8}};
+
+  p.NewTxnRequest(new Put(m));
+  delete p.GetTxnResult();
+
+  map<long unsigned int, long unsigned int> nokey = {{2,2}};
+  p.NewTxnRequest(new Expect(nokey));  // Should abort (no key '2' exists)
+  t = p.GetTxnResult();
+  EXPECT_EQ(ABORTED, t->Status());
+  delete t;
+
+  map<long unsigned int, long unsigned int> wrongval = {{1,1}};
+  p.NewTxnRequest(new Expect(wrongval));  // Should abort (wrong value for key)
+  t = p.GetTxnResult();
+  EXPECT_EQ(ABORTED, t->Status());
+  delete t;
+
+  map<long unsigned int, long unsigned int> ok = {{1,2}};
+  p.NewTxnRequest(new Expect(ok));  // Should commit
+  t = p.GetTxnResult();
+  EXPECT_EQ(COMMITTED, t->Status());
+  delete t;
+
+  END;
+}
+
+// bank condition
+// set an initial value
+// one tx reads it and writes some higher
+// one tx reads it and writes some lower
+
 
 // Returns a human-readable string naming of the providing mode.
 string ModeToString(CCMode mode) {
@@ -82,9 +135,11 @@ void Benchmark(const vector<LoadGen*>& lg) {
     db_init[i] = 0;
 
   // For each MODE...
-  for (CCMode mode = SERIAL;
-      mode <= P_OCC;
-      mode = static_cast<CCMode>(mode+1)) {
+  // for (CCMode mode = SERIAL;
+  //     mode <= P_OCC;
+  //     mode = static_cast<CCMode>(mode+1)) {
+  CCMode mode = P_OCC;
+  if (1) {
     // Print out mode name.
     cout << ModeToString(mode) << flush;
 
@@ -136,6 +191,11 @@ void Benchmark(const vector<LoadGen*>& lg) {
 }
 
 int main(int argc, char** argv) {
+
+  NoopTest();
+  PutTest();
+  PutMultipleTest();
+
   cout << "\t\t\t    Average Transaction Duration" << endl;
   cout << "\t\t0.1ms\t\t1ms\t\t10ms\t\t100ms";
   cout << endl;
