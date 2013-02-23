@@ -16,6 +16,7 @@ using std::map;
 using std::deque;
 using std::vector;
 using std::tr1::unordered_map;
+using std::set;
 
 class Txn;
 
@@ -109,6 +110,8 @@ class LockManager {
   // 'txn_waits_' are invalided by any call to Release() with the entry's
   // txn.
   unordered_map<Txn*, int> txn_waits_;
+
+  set<Tx *> ready_set_;
 };
 
 // Version of the LockManager implementing ONLY exclusive locks.
