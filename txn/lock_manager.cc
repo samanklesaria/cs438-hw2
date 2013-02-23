@@ -11,7 +11,13 @@ LockManagerA::LockManagerA(deque<Txn*>* ready_txns) {
 
 bool LockManagerA::WriteLock(Txn* txn, const Key& key) {
   LockRequest l(EXCLUSIVE, txn);
-  lock_table_[key]->push_back(l);
+  if (lock_table_.count(key))
+    lock_table_[key]->push_back(l);
+  else {
+    // this never gets deleted. problem?
+    deque<LockRequest> *my_queue = new deque<LockRequest>(1, l);
+    lock_table_[key] = my_queue;
+  }
   if (lock_table_[key]->size() == 1)
     return true;
   else {
@@ -29,6 +35,7 @@ bool LockManagerA::ReadLock(Txn* txn, const Key& key) {
 }
 
 void LockManagerA::Release(Txn* txn, const Key& key) {
+
   deque<LockRequest> *requests = lock_table_[key];
   deque<LockRequest>::iterator i;
   for (i=requests->begin(); i != requests->end(); i++) {
