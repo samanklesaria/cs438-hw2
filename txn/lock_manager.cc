@@ -10,10 +10,12 @@ LockManagerA::LockManagerA(deque<Txn*>* ready_txns) {
 }
 
 bool LockManagerA::WriteLock(Txn* txn, const Key& key) {
-  // CPSC 438/538:
-  //
-  // Implement this method!
-  return true;
+  lock_table_[key]->push_back(txn);
+  if (lock_table_[key]->size == 1) return true else {
+    if (txn_waits_.count(txn))
+      txn_waits_[txn] = 1;
+    else txn_waits_[txn]++;
+    return false;
 }
 
 bool LockManagerA::ReadLock(Txn* txn, const Key& key) {
@@ -23,9 +25,9 @@ bool LockManagerA::ReadLock(Txn* txn, const Key& key) {
 }
 
 void LockManagerA::Release(Txn* txn, const Key& key) {
-  // CPSC 438/538:
-  //
-  // Implement this method!
+  deque<LockRequest> *requests = lock_table_[key];
+  requests->erase(find(requests->begin, requests->end));
+  txn_waits_[key]--;
 }
 
 LockMode LockManagerA::Status(const Key& key, vector<Txn*>* owners) {
