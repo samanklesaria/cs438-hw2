@@ -112,37 +112,27 @@ bool LockManagerB::ReadLock(Txn* txn, const Key& key) {
 }
 
 void LockManagerB::Release(Txn* txn, const Key& key) {
-
   deque<LockRequest> *requests = lock_table_[key];
   deque<LockRequest>::iterator i;
   for (i=requests->begin(); i != requests->end(); i++) {
     if (i->txn_ == txn) {
-      hadLock = (requests->front().txn_ == txn);
-      hadMode = requests->front().mode_;
+      if ((i+1) != requests->end()) {
+        bool atStart = i == requests->begin();
+        if (atStart && ((i+1)->mode_ == EXCLUSIVE)) {
+          if (--txn_waits_[(i+1)->txn_] == 0) ready_txns_->push_back((i+1)->txn_);
+        }
+        if ((i->mode_ == EXCLUSIVE) && (
+          (atStart && (i+1)->mode_ == SHARED) ||
+          ((!atStart && (i-1)->mode_ == SHARED) && ((i+1)->mode_ == SHARED)))) {
+              deque<LockRequest>::iterator j;
+            for (j=i+1; j != requests->end() && j->mode_ == SHARED; j++)
+              if (--txn_waits_[j->txn_] == 0) ready_txns_->push_back(j->txn_);
+        }
+      }
       requests->erase(i);
       break;
     }
   }
-
-  // if we took away a shared lock and the next is exclusive, start it
-  // if we took away an exclusive lock, start all the shared locks after it
-  if (requests->size() >= 1 && hadLock) {
-    if (requests->front().mode_ == EXCLUSIVE) {
-      Txn *to_start = requests->front().txn_;
-      if (--txn_waits_[to_start] == 0) {
-        ready_txns_->push_back(to_start);
-        ready_set_.insert(to_start);
-      }
-    } else if (hadMode == EXCLUSIVE && requests->front().mode_ == SHARED) {
-      for (i=requests->begin(); i != requests->end() && i->mode_ == SHARED; i++) {
-        if (--txn_waits_[i->txn_] == 0) {
-          ready_txns_->push_back(i->txn_);
-          ready_set.insert(to_start);
-        }
-      }
-    }
-  }
-
 }
 
 LockMode LockManagerB::Status(const Key& key, vector<Txn*>* owners) {
