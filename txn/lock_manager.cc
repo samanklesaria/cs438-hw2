@@ -31,10 +31,11 @@ void LockManagerA::Release(Txn* txn, const Key& key) {
 }
 
 LockMode LockManagerA::Status(const Key& key, vector<Txn*>* owners) {
-  // CPSC 438/538:
-  //
-  // Implement this method!
-  return UNLOCKED;
+  deque<LockRequest>::iterator i;
+  owners->clear();
+  for (i=lock_table_[key]->begin(); i != lock_table_[key]->end(); i++)
+    owners->push_back(*i);
+  return owners->empty() ? UNLOCKED : EXCLUSIVE;
 }
 
 LockManagerB::LockManagerB(deque<Txn*>* ready_txns) {
