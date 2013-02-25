@@ -10,7 +10,7 @@
 #include "utils/testing.h"
 
 TEST(NoopTest) {
-  TxnProcessor p(OCC);
+  TxnProcessor p(P_OCC);
 
   Txn* t = new Noop();
   EXPECT_EQ(INCOMPLETE, t->Status());
@@ -25,7 +25,7 @@ TEST(NoopTest) {
 }
 
 TEST(PutTest) {
-  TxnProcessor p(OCC);
+  TxnProcessor p(P_OCC);
   Txn* t;
 
   map<long unsigned int, long unsigned int> m = {{1,2}, {3,4}, {5,6}, {7,8}};
@@ -52,6 +52,30 @@ TEST(PutTest) {
   delete t;
 
   END;
+}
+
+TEST(BasicRMW) {
+  TxnProcessor p(P_OCC);
+  Txn* t;
+
+  map<long unsigned int, long unsigned int> m = {{1,2}};
+
+  p.NewTxnRequest(new Put(m));
+  delete p.GetTxnResult();
+
+  const set<Key> readset = {0};
+  const set<Key> writeset = {0};
+
+  p.NewTxnRequest(new RMW(readset, writeset, 0));
+  t = p.GetTxnResult();
+  delete t;
+
+  p.NewTxnRequest(new RMW(readset, writeset, 0));
+  t = p.GetTxnResult();
+  delete t;
+
+  END;
+
 }
 
 // bank condition
@@ -194,7 +218,7 @@ int main(int argc, char** argv) {
 
   NoopTest();
   PutTest();
-  PutMultipleTest();
+  BasicRMW();
 
   cout << "\t\t\t    Average Transaction Duration" << endl;
   cout << "\t\t0.1ms\t\t1ms\t\t10ms\t\t100ms";

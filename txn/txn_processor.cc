@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include <set>
+#include <algorithm>
 
 #include "txn/lock_manager.h"
 
@@ -207,6 +208,7 @@ void TxnProcessor::RunOCCScheduler() {
 
           // Try transaction again
           NewTxnRequest(txn);
+          continue;
 
         }
       } else if (txn->Status() == COMPLETED_A) {
@@ -222,18 +224,116 @@ void TxnProcessor::RunOCCScheduler() {
   }
 }
 
-void TxnProcessor::RunOCCParallelScheduler() {
-  // CPSC 438/538:
-  //
-  // Implement this method! Note that implementing OCC with parallel
-  // validation may require modifications to other files, most likely
-  // txn_processor.h and possibly others.
-  //
-  // [For now, run serial scheduler in order to make it through the test
-  // suite]
+// number of completed transactions to validate per thread
+#define N 10
+#define M 10
 
-  RunSerialScheduler();
+void TxnProcessor::RunOCCParallelScheduler() {
+  Txn* txn;
+  while (tp_.Active()) {
+
+    // Start processing the next incoming transaction request.
+    if (txn_requests_.Pop(&txn)) {
+      txn->occ_start_time_ = GetTime();
+      tp_.RunTask(new Method<TxnProcessor, void, Txn*>(
+            this,
+            &TxnProcessor::ExecuteTxn,
+            txn));
+    }
+
+    // Set the verified state of completed transactions
+    // int i = 0;
+    while (completed_txns_.Pop(&txn)) {
+      // what's with the active set? what's it for? why should we copy it?
+      set<Txn*> active_set_copy = active_set_;
+      active_set_.insert(txn);
+      tp_.RunTask(new Method<TxnProcessor, void, Txn*, set<Txn*>>(
+            this,
+            &TxnProcessor::ValidateTxn,
+            txn,
+            active_set_copy));
+    }
+
+    // Restart or commit transactions
+    std::pair<Txn*, bool> p;
+    // int j = 0;
+    while (validated_txns_.Pop(&p)) {
+      active_set_.erase(p.first);
+
+      if (p.first->Status() == COMPLETED_C) {
+        if (p.second)
+          p.first->status_ = COMMITTED;
+        else {
+          p.first->status_ = INCOMPLETE;
+          NewTxnRequest(p.first);
+          continue;
+        }
+      } else if (p.first->Status() == COMPLETED_A) {
+        p.first->status_ = ABORTED;
+      } else {
+        // Invalid TxnStatus!
+        DIE("Completed Txn has invalid TxnStatus: " << p.first->Status());
+      }
+
+      // Return result to client.
+      txn_results_.Push(p.first);
+    }
+  }
+
 }
+
+void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
+
+  bool verified = true;
+  assert(active_set_copy.count(txn) == 0);
+
+  // check for overlap in readset
+  for (set<Key>::iterator it = txn->readset_.begin();
+       it != txn->readset_.end(); ++it) {
+
+    // if last modified > my start then invalid
+    if (storage_.Timestamp(*it) > txn->occ_start_time_) {
+      verified = false;
+      break;
+    }
+
+  }
+
+  // check for overlap in writeset
+  for (set<Key>::iterator it = txn->writeset_.begin();
+       it != txn->writeset_.end(); ++it) {
+
+    // if last modified > my start then invalid
+    if (storage_.Timestamp(*it) > txn->occ_start_time_) {
+      verified = false;
+      break;
+    }
+
+  }
+
+  // check if the writeset intersects with the read or write sets
+  // of any concurrently validating txns
+  for (set<Txn*>::iterator it = active_set_copy.begin();
+       it != active_set_copy.end(); ++it) {
+    set<Key> union_set;
+    std::set_union(
+      (*it)->writeset_.begin(), (*it)->writeset_.end(),
+      (*it)->readset_.begin(), (*it)->readset_.end(),
+      std::inserter(union_set, union_set.begin()));
+    set<Txn *> intersection_set;
+    for(set<Key>::iterator it2 = txn->writeset_.begin();
+        it2 != txn->writeset_.end(); ++it2)
+    {
+      verified = verified && union_set.count(*it2);
+      if(!verified) break;
+    }
+  }
+  
+
+  if (verified) ApplyWrites(txn);
+  validated_txns_.Push(std::make_pair(txn, verified));
+}
+
 
 void TxnProcessor::ExecuteTxn(Txn* txn) {
   

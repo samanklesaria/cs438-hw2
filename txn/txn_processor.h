@@ -7,6 +7,7 @@
 #include <deque>
 #include <map>
 #include <string>
+#include <algorithm>
 
 #include "txn/common.h"
 #include "txn/lock_manager.h"
@@ -67,6 +68,9 @@ class TxnProcessor {
   // OCC version of scheduler with parallel validation.
   void RunOCCParallelScheduler();
 
+  // Validate a transaction in parallel
+  void ValidateTxn(Txn* txn, set<Txn*>);
+
   // Performs all reads required to execute the transaction, then executes the
   // transaction logic.
   void ExecuteTxn(Txn* txn);
@@ -100,6 +104,12 @@ class TxnProcessor {
 
   // Queue of completed (but not yet committed/aborted) transactions.
   AtomicQueue<Txn*> completed_txns_;
+
+  // Active set
+  set<Txn*> active_set_;
+
+  // Map of validated transactions to validity
+  AtomicQueue<std::pair<Txn*, bool> > validated_txns_;
 
   // Queue of transaction results (already committed or aborted) to be returned
   // to client.
