@@ -64,13 +64,13 @@ TEST(BasicRMW) {
   delete p.GetTxnResult();
 
   const set<Key> readset = {0};
-  const set<Key> writeset = {0};
+  const set<Key> writeset = {1};
 
-  p.NewTxnRequest(new RMW(readset, writeset, 0));
+  p.NewTxnRequest(new RMW(readset, writeset, 0.1));
   t = p.GetTxnResult();
   delete t;
 
-  p.NewTxnRequest(new RMW(readset, writeset, 0));
+  p.NewTxnRequest(new RMW(writeset, readset, 0));
   t = p.GetTxnResult();
   delete t;
 
@@ -80,8 +80,9 @@ TEST(BasicRMW) {
 
 // bank condition
 // set an initial value
-// one tx reads it and writes some higher
-// one tx reads it and writes some lower
+// one reads and writes
+// another reads and writes
+// the result should be old + 2
 
 
 // Returns a human-readable string naming of the providing mode.
@@ -218,7 +219,7 @@ int main(int argc, char** argv) {
 
   NoopTest();
   PutTest();
-  BasicRMW();
+  // BasicRMW();
 
   cout << "\t\t\t    Average Transaction Duration" << endl;
   cout << "\t\t0.1ms\t\t1ms\t\t10ms\t\t100ms";

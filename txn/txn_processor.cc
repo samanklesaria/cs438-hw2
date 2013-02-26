@@ -202,7 +202,6 @@ void TxnProcessor::RunOCCScheduler() {
 
           // Everything is hunky dory
           ApplyWrites(txn);
-          txn->status_ = COMMITTED;
 
         } else {
 
@@ -225,8 +224,8 @@ void TxnProcessor::RunOCCScheduler() {
 }
 
 // number of completed transactions to validate per thread
-#define N 10
-#define M 10
+#define N 200
+#define M 200
 
 void TxnProcessor::RunOCCParallelScheduler() {
   Txn* txn;
@@ -242,9 +241,8 @@ void TxnProcessor::RunOCCParallelScheduler() {
     }
 
     // Set the verified state of completed transactions
-    // int i = 0;
-    while (completed_txns_.Pop(&txn)) {
-      // what's with the active set? what's it for? why should we copy it?
+    int i = 0;
+    while (completed_txns_.Pop(&txn) && i++ < N) {
       set<Txn*> active_set_copy = active_set_;
       active_set_.insert(txn);
       tp_.RunTask(new Method<TxnProcessor, void, Txn*, set<Txn*>>(
@@ -256,23 +254,13 @@ void TxnProcessor::RunOCCParallelScheduler() {
 
     // Restart or commit transactions
     std::pair<Txn*, bool> p;
-    // int j = 0;
-    while (validated_txns_.Pop(&p)) {
+    int j = 0;
+    while (validated_txns_.Pop(&p) && j++ < M) {
       active_set_.erase(p.first);
-
-      if (p.first->Status() == COMPLETED_C) {
-        if (p.second)
-          p.first->status_ = COMMITTED;
-        else {
-          p.first->status_ = INCOMPLETE;
-          NewTxnRequest(p.first);
-          continue;
-        }
-      } else if (p.first->Status() == COMPLETED_A) {
-        p.first->status_ = ABORTED;
-      } else {
-        // Invalid TxnStatus!
-        DIE("Completed Txn has invalid TxnStatus: " << p.first->Status());
+      if (!p.second) {
+        p.first->status_ = INCOMPLETE;
+        NewTxnRequest(p.first);
+        continue;
       }
 
       // Return result to client.
@@ -283,9 +271,19 @@ void TxnProcessor::RunOCCParallelScheduler() {
 }
 
 void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
+  
+  assert(active_set_copy.count(txn) == 0);
+
+  // ensure that status is COMPLETED_C
+  if (txn->Status() == COMPLETED_A) {
+    txn->status_ = ABORTED;
+    validated_txns_.Push(std::make_pair(txn, true));
+    return;
+  } else if (txn->Status() != COMPLETED_C) {
+    DIE("Completed Txn has invalid TxnStatus: " << txn->Status());
+  }
 
   bool verified = true;
-  assert(active_set_copy.count(txn) == 0);
 
   // check for overlap in readset
   for (set<Key>::iterator it = txn->readset_.begin();
@@ -300,6 +298,9 @@ void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
   }
 
   // check for overlap in writeset
+  // why do we need this?
+  // this isn't necessary by abadi's pseudocode
+  /*
   for (set<Key>::iterator it = txn->writeset_.begin();
        it != txn->writeset_.end(); ++it) {
 
@@ -310,6 +311,7 @@ void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
     }
 
   }
+  */
 
   // check if the writeset intersects with the read or write sets
   // of any concurrently validating txns
@@ -320,15 +322,13 @@ void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
       (*it)->writeset_.begin(), (*it)->writeset_.end(),
       (*it)->readset_.begin(), (*it)->readset_.end(),
       std::inserter(union_set, union_set.begin()));
-    set<Txn *> intersection_set;
     for(set<Key>::iterator it2 = txn->writeset_.begin();
         it2 != txn->writeset_.end(); ++it2)
     {
-      verified = verified && union_set.count(*it2);
+      verified = verified && !union_set.count(*it2);
       if(!verified) break;
     }
   }
-  
 
   if (verified) ApplyWrites(txn);
   validated_txns_.Push(std::make_pair(txn, verified));
