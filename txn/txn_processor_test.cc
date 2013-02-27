@@ -9,6 +9,66 @@
 #include "txn/txn_types.h"
 #include "utils/testing.h"
 
+
+class BankTxn : public Txn {
+ public:
+  BankTxn(double time = 0) : time_(time) {
+    readset_ = {1};
+    writeset_ = {1};
+  }
+
+  BankTxn* clone() const {             // Virtual constructor (copying)
+    BankTxn* clone = new BankTxn(time_);
+    return clone;
+  }
+
+  void Run() {
+    Value result;
+    Read(1, &result);
+    Write(1, result + 1);
+
+    // Wait a random amount of time (averaging time_) before committing.
+    Sleep(0.9 * time_ + RandomDouble(time_ * 0.2));
+    COMMIT;
+  }
+
+ private:
+  double time_;
+};
+
+class Shopping : public Txn {
+ public:
+  Shopping(Key account, double time = 0) : time_(time) {
+    account_ = account;
+    readset_ = {1};
+    writeset_ = {1, account};
+  }
+
+  Shopping* clone() const {             // Virtual constructor (copying)
+    Shopping* clone = new Shopping(account_, time_);
+    return clone;
+  }
+
+  void Run() {
+    Value result;
+    Read(1, &result);
+
+    if (result) {
+      Write(1, result - 1);
+      Read(account_, &result);
+      Write(account_, result + 1);
+    }
+
+    // Wait a random amount of time (averaging time_) before committing.
+    Sleep(0.9 * time_ + RandomDouble(time_ * 0.2));
+    COMMIT;
+  }
+
+ private:
+  Key account_;
+  double time_;
+};
+
 TEST(NoopTest) {
   TxnProcessor p(P_OCC);
 
@@ -54,35 +114,73 @@ TEST(PutTest) {
   END;
 }
 
-TEST(BasicRMW) {
+TEST(BasicBank) {
+
   TxnProcessor p(P_OCC);
   Txn* t;
 
-  map<long unsigned int, long unsigned int> m = {{1,2}};
+  map<long unsigned int, long unsigned int> m = {{1,0}};
 
   p.NewTxnRequest(new Put(m));
   delete p.GetTxnResult();
 
-  const set<Key> readset = {0};
-  const set<Key> writeset = {1};
+  p.NewTxnRequest(new BankTxn(0.0001));
+  p.NewTxnRequest(new BankTxn(0.001));
+  p.NewTxnRequest(new BankTxn(0.01));
+  p.NewTxnRequest(new BankTxn(0.1));
+  p.NewTxnRequest(new BankTxn(0));
 
-  p.NewTxnRequest(new RMW(readset, writeset, 0.1));
-  t = p.GetTxnResult();
-  delete t;
+  delete p.GetTxnResult();
+  delete p.GetTxnResult();
+  delete p.GetTxnResult();
+  delete p.GetTxnResult();
+  delete p.GetTxnResult();
 
-  p.NewTxnRequest(new RMW(writeset, readset, 0));
+  Sleep(5);
+
+  map<long unsigned int, long unsigned int> ok = {{1,5}};
+  p.NewTxnRequest(new Expect(ok));  // Should commit
   t = p.GetTxnResult();
+  EXPECT_EQ(COMMITTED, t->Status());
   delete t;
 
   END;
 
 }
 
-// bank condition
-// set an initial value
-// one reads and writes
-// another reads and writes
-// the result should be old + 2
+TEST(ShoppingTest) {
+
+  TxnProcessor p(P_OCC);
+  Txn* t;
+
+  map<long unsigned int, long unsigned int> m = {{1,3}, {2,0}, {3,0}, {4,0}, {5,0}, {6,0}, {7,0}, {8,0},};
+
+  p.NewTxnRequest(new Put(m));
+  delete p.GetTxnResult();
+
+  p.NewTxnRequest(new Shopping(2,0.0001));
+  p.NewTxnRequest(new Shopping(3, 0.001));
+  p.NewTxnRequest(new Shopping(4, 0.01));
+  p.NewTxnRequest(new Shopping(5, 0.1));
+  p.NewTxnRequest(new Shopping(6, 0));
+
+  delete p.GetTxnResult();
+  delete p.GetTxnResult();
+  delete p.GetTxnResult();
+  delete p.GetTxnResult();
+  delete p.GetTxnResult();
+
+  Sleep(5);
+
+  map<long unsigned int, long unsigned int> ok = {{1,0}};
+  p.NewTxnRequest(new Expect(ok));  // Should commit
+  t = p.GetTxnResult();
+  EXPECT_EQ(COMMITTED, t->Status());
+  delete t;
+
+  END;
+
+}
 
 
 // Returns a human-readable string naming of the providing mode.
@@ -160,11 +258,11 @@ void Benchmark(const vector<LoadGen*>& lg) {
     db_init[i] = 0;
 
   // For each MODE...
-  // for (CCMode mode = SERIAL;
-  //     mode <= P_OCC;
-  //     mode = static_cast<CCMode>(mode+1)) {
-  CCMode mode = P_OCC;
-  if (1) {
+  for (CCMode mode = SERIAL;
+      mode <= P_OCC;
+      mode = static_cast<CCMode>(mode+1)) {
+  // CCMode mode = P_OCC;
+  // if (1) {
     // Print out mode name.
     cout << ModeToString(mode) << flush;
 
@@ -217,15 +315,16 @@ void Benchmark(const vector<LoadGen*>& lg) {
 
 int main(int argc, char** argv) {
 
+  vector<LoadGen *> lg;
+
   NoopTest();
   PutTest();
-  // BasicRMW();
+  BasicBank();
+  ShoppingTest();
 
   cout << "\t\t\t    Average Transaction Duration" << endl;
   cout << "\t\t0.1ms\t\t1ms\t\t10ms\t\t100ms";
   cout << endl;
-
-  vector<LoadGen*> lg;
 
   cout << "Read only" << endl;
   lg.push_back(new RMWLoadGen(10000, 10, 0, 0.0001));

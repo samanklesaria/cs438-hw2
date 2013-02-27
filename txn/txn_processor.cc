@@ -223,9 +223,12 @@ void TxnProcessor::RunOCCScheduler() {
   }
 }
 
-// number of completed transactions to validate per thread
+// number of worker threads for validating transactions
 #define N 200
-#define M 200
+
+// rate at which to return invalid transactions to the request queue
+// and report to the user
+#define M 100
 
 void TxnProcessor::RunOCCParallelScheduler() {
   Txn* txn;
@@ -298,9 +301,6 @@ void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
   }
 
   // check for overlap in writeset
-  // why do we need this?
-  // this isn't necessary by abadi's pseudocode
-  /*
   for (set<Key>::iterator it = txn->writeset_.begin();
        it != txn->writeset_.end(); ++it) {
 
@@ -311,7 +311,6 @@ void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
     }
 
   }
-  */
 
   // check if the writeset intersects with the read or write sets
   // of any concurrently validating txns

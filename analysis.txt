@@ -1,0 +1,5 @@
+2) 
+
+3) Unlike two phase locking, our locking scheme acquires all locks at the start, before perorming any of its own logic. This means that some locks will be held longer than strictly necessary. In two phase locking, a lock would only be required right before at transaction reads from (or writes to) a value. This eliminates the wasted time between acquiring the lock and using the locked value. Other transactions that actually need the lock could be using the lock during this time. Standard two phase lock should thus have somewhat better performance, especially if the transactions being run are particularly long. Both two phase locking and our locking scheme will only release locks once all other processing has occured. In theory, two phase locking need not eliminate its locks all at once, but there would be nothing to be gained by holding on to them, as no further reads or writes could occur. 
+
+5) 
