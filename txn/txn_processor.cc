@@ -12,6 +12,7 @@
 // Thread & queue counts for StaticThreadPool initialization.
 #define THREAD_COUNT 100
 #define QUEUE_COUNT 10
+using namespace std;
 
 TxnProcessor::TxnProcessor(CCMode mode)
     : mode_(mode), tp_(THREAD_COUNT, QUEUE_COUNT), next_unique_id_(1) {
@@ -223,12 +224,12 @@ void TxnProcessor::RunOCCScheduler() {
   }
 }
 
-// number of worker threads for validating transactions
-#define N 200
+// rate at which to start threads for transaction validation
+#define N 2
 
 // rate at which to return invalid transactions to the request queue
 // and report to the user
-#define M 100
+#define M 10
 
 void TxnProcessor::RunOCCParallelScheduler() {
   Txn* txn;
@@ -243,22 +244,10 @@ void TxnProcessor::RunOCCParallelScheduler() {
             txn));
     }
 
-    // Set the verified state of completed transactions
-    int i = 0;
-    while (completed_txns_.Pop(&txn) && i++ < N) {
-      set<Txn*> active_set_copy = active_set_;
-      active_set_.insert(txn);
-      tp_.RunTask(new Method<TxnProcessor, void, Txn*, set<Txn*>>(
-            this,
-            &TxnProcessor::ValidateTxn,
-            txn,
-            active_set_copy));
-    }
-
     // Restart or commit transactions
     std::pair<Txn*, bool> p;
     int j = 0;
-    while (validated_txns_.Pop(&p) && j++ < M) {
+    while (j++ < M && validated_txns_.Pop(&p)) {
       active_set_.erase(p.first);
       if (!p.second) {
         p.first->status_ = INCOMPLETE;
@@ -269,13 +258,22 @@ void TxnProcessor::RunOCCParallelScheduler() {
       // Return result to client.
       txn_results_.Push(p.first);
     }
-  }
 
+    // Set the verified state of completed transactions
+    int i = 0;
+    while (i++ < N && completed_txns_.Pop(&txn)) {
+      set<Txn*> active_set_copy = set<Txn*>(active_set_);
+      active_set_.insert(txn);
+      tp_.RunTask(new Method<TxnProcessor, void, Txn*, set<Txn*>>(
+            this,
+            &TxnProcessor::ValidateTxn,
+            txn,
+            active_set_copy));
+    }
+  }
 }
 
 void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
-  
-  assert(active_set_copy.count(txn) == 0);
 
   // ensure that status is COMPLETED_C
   if (txn->Status() == COMPLETED_A) {
@@ -316,15 +314,11 @@ void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
   // of any concurrently validating txns
   for (set<Txn*>::iterator it = active_set_copy.begin();
        it != active_set_copy.end(); ++it) {
-    set<Key> union_set;
-    std::set_union(
-      (*it)->writeset_.begin(), (*it)->writeset_.end(),
-      (*it)->readset_.begin(), (*it)->readset_.end(),
-      std::inserter(union_set, union_set.begin()));
     for(set<Key>::iterator it2 = txn->writeset_.begin();
         it2 != txn->writeset_.end(); ++it2)
     {
-      verified = verified && !union_set.count(*it2);
+      verified = verified && !(*it)->writeset_.count(*it2) &&
+                 !(*it)->readset_.count(*it2);
       if(!verified) break;
     }
   }
