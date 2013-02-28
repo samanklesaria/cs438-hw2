@@ -6,6 +6,7 @@
 
 #include <set>
 #include <algorithm>
+#include <utility>
 
 #include "txn/lock_manager.h"
 
@@ -156,7 +157,6 @@ void TxnProcessor::RunLockingScheduler() {
 }
 
 void TxnProcessor::RunOCCScheduler() {
-
   Txn* txn;
   while (tp_.Active()) {
     // Start processing the next incoming transaction request.
@@ -171,44 +171,35 @@ void TxnProcessor::RunOCCScheduler() {
     // Verify all completed transactions
     bool verified = true;
     while (completed_txns_.Pop(&txn)) {
-
       // check for overlap in readset
       for (set<Key>::iterator it = txn->readset_.begin();
            it != txn->readset_.end(); ++it) {
-
         // if last modified > my start then invalid
         if (storage_.Timestamp(*it) > txn->occ_start_time_) {
           verified = false;
           break;
         }
-
       }
 
       // check for overlap in writeset
       for (set<Key>::iterator it = txn->writeset_.begin();
            it != txn->writeset_.end(); ++it) {
-
         // if last modified > my start then invalid
         if (storage_.Timestamp(*it) > txn->occ_start_time_) {
           verified = false;
           break;
         }
-
       }
 
       // Commit/abort txn according to program logic's commit/abort decision.
       if (txn->Status() == COMPLETED_C) {
         if (verified) {
-
           // Everything is hunky dory
           ApplyWrites(txn);
-
         } else {
-
           // Try transaction again
           NewTxnRequest(txn);
           continue;
-
         }
       } else if (txn->Status() == COMPLETED_A) {
         txn->status_ = ABORTED;
@@ -233,7 +224,6 @@ void TxnProcessor::RunOCCScheduler() {
 void TxnProcessor::RunOCCParallelScheduler() {
   Txn* txn;
   while (tp_.Active()) {
-
     // Start processing the next incoming transaction request.
     if (txn_requests_.Pop(&txn)) {
       txn->occ_start_time_ = GetTime();
@@ -248,7 +238,7 @@ void TxnProcessor::RunOCCParallelScheduler() {
     while (completed_txns_.Pop(&txn) && i++ < N) {
       set<Txn*> active_set_copy = active_set_;
       active_set_.insert(txn);
-      tp_.RunTask(new Method<TxnProcessor, void, Txn*, set<Txn*>>(
+      tp_.RunTask(new Method<TxnProcessor, void, Txn*, set<Txn*>> (
             this,
             &TxnProcessor::ValidateTxn,
             txn,
@@ -270,11 +260,9 @@ void TxnProcessor::RunOCCParallelScheduler() {
       txn_results_.Push(p.first);
     }
   }
-
 }
 
 void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
-  
   assert(active_set_copy.count(txn) == 0);
 
   // ensure that status is COMPLETED_C
@@ -291,25 +279,21 @@ void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
   // check for overlap in readset
   for (set<Key>::iterator it = txn->readset_.begin();
        it != txn->readset_.end(); ++it) {
-
     // if last modified > my start then invalid
     if (storage_.Timestamp(*it) > txn->occ_start_time_) {
       verified = false;
       break;
     }
-
   }
 
   // check for overlap in writeset
   for (set<Key>::iterator it = txn->writeset_.begin();
        it != txn->writeset_.end(); ++it) {
-
     // if last modified > my start then invalid
     if (storage_.Timestamp(*it) > txn->occ_start_time_) {
       verified = false;
       break;
     }
-
   }
 
   // check if the writeset intersects with the read or write sets
@@ -321,11 +305,10 @@ void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
       (*it)->writeset_.begin(), (*it)->writeset_.end(),
       (*it)->readset_.begin(), (*it)->readset_.end(),
       std::inserter(union_set, union_set.begin()));
-    for(set<Key>::iterator it2 = txn->writeset_.begin();
-        it2 != txn->writeset_.end(); ++it2)
-    {
+    for (set<Key>::iterator it2 = txn->writeset_.begin();
+        it2 != txn->writeset_.end(); ++it2) {
       verified = verified && !union_set.count(*it2);
-      if(!verified) break;
+      if (!verified) break;
     }
   }
 
@@ -335,7 +318,6 @@ void TxnProcessor::ValidateTxn(Txn *txn, set<Txn*> active_set_copy) {
 
 
 void TxnProcessor::ExecuteTxn(Txn* txn) {
-  
   // wipe reads_ and writes_
   txn->reads_.clear();
   txn->writes_.clear();
@@ -363,7 +345,6 @@ void TxnProcessor::ExecuteTxn(Txn* txn) {
 
   // Hand the txn back to the RunScheduler thread.
   completed_txns_.Push(txn);
-
 }
 
 void TxnProcessor::ApplyWrites(Txn* txn) {

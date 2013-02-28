@@ -1,5 +1,11 @@
-2) 
+Qn2:
 
-3) Unlike two phase locking, our locking scheme acquires all locks at the start, before perorming any of its own logic. This means that some locks will be held longer than strictly necessary. In two phase locking, a lock would only be required right before at transaction reads from (or writes to) a value. This eliminates the wasted time between acquiring the lock and using the locked value. Other transactions that actually need the lock could be using the lock during this time. Standard two phase lock should thus have somewhat better performance, especially if the transactions being run are particularly long. Both two phase locking and our locking scheme will only release locks once all other processing has occured. In theory, two phase locking need not eliminate its locks all at once, but there would be nothing to be gained by holding on to them, as no further reads or writes could occur. 
+Forcing a transaction to sleep for a given amount of time is a good way of approximating transaction costs because the time taken by a transaction to execute may vary greatly depending on the nature of the transation and what it's doing. Transactions may be doing all sorts of operations like joins or simple reads only. It is thus difficult to assess the run time of a particular transaction uniformly. Forcing a thread to sleep for a fixed time limit hence enables us to approximate these times which we would otherwise be unable to measure because it is difficult to accurately predict the types of transactions in a real system.
 
-5) 
+This approximation seems to be very artificial because we are arbitrarily assigning the values of sleep time.
+
+Qn3:
+
+Both locking scheme B and two-phase locking use two types of locks: exclusive and shared. Exclusive locks are used on data that is to be written and shared locks are used on data that is to be read. Both the locking schemes have a lock acquisition phase and lock release phase. In locking scheme B, a transaction has a list of locks that it wants to acquire. In the lock acquisition phase it will acquire all the locks that it needs before starting to execute anything. After lock acquisition, the transaction executes and then releases all its locks only when it finishes execution. On the other hand, two-phase locking acquires locks in the expanding phase during which it is also able to start execution on data that it acquired locks on. After it has acquired all the locks, it enters the shrinking phase in which it is not able to acquire any more locks and can only release locks. Two-phase locking scheme should perform better than locking scheme B since it does not wait to acquire all its locks before execution.
+
+Qn4:

@@ -12,25 +12,26 @@ LockManagerA::LockManagerA(deque<Txn*>* ready_txns) {
 
 
 bool LockManagerA::WriteLock(Txn* txn, const Key& key) {
-  
   // Make a new LockRequest
   LockRequest l(EXCLUSIVE, txn);
 
   // Initialize the locktable for that key
-  if (lock_table_.count(key))
+  if (lock_table_.count(key)) {
     lock_table_[key]->push_back(l);
-  else {
+  } else {
     deque<LockRequest> *my_queue = new deque<LockRequest>(1, l);
     lock_table_[key] = my_queue;
   }
 
   // Check if the transaction acquired the lock
-  if (lock_table_[key]->size() == 1)
+  if (lock_table_[key]->size() == 1) {
     return true;
-  else {
-    if (txn_waits_.count(txn))
+  } else {
+    if (txn_waits_.count(txn)) {
       txn_waits_[txn] = 1;
-    else txn_waits_[txn]++;
+    } else {
+     txn_waits_[txn]++;
+    }
     return false;
   }
 }
@@ -44,7 +45,6 @@ bool LockManagerA::ReadLock(Txn* txn, const Key& key) {
 
 
 void LockManagerA::Release(Txn* txn, const Key& key) {
-
   // Whether the removed trasaction had a lock
   bool hadLock;
 
@@ -53,7 +53,7 @@ void LockManagerA::Release(Txn* txn, const Key& key) {
 
   // Remove the txn from requests
   deque<LockRequest>::iterator i;
-  for (i=requests->begin(); i != requests->end(); i++) {
+  for (i = requests->begin(); i != requests->end(); i++) {
     if (i->txn_ == txn) {
       hadLock = (requests->front().txn_ == txn);
       requests->erase(i);
@@ -66,12 +66,10 @@ void LockManagerA::Release(Txn* txn, const Key& key) {
     Txn *to_start = requests->front().txn_;
     if (--txn_waits_[to_start] == 0) ready_txns_->push_back(to_start);
   }
-
 }
 
 
 LockMode LockManagerA::Status(const Key& key, vector<Txn*>* owners) {
-
   // reinitialize the owners vector
   deque<LockRequest>::iterator i;
   owners->clear();
@@ -82,7 +80,6 @@ LockMode LockManagerA::Status(const Key& key, vector<Txn*>* owners) {
 
   // report status to user
   return owners->empty() ? UNLOCKED : EXCLUSIVE;
-
 }
 
 
@@ -93,31 +90,30 @@ LockManagerB::LockManagerB(deque<Txn*>* ready_txns) {
 
 
 bool LockManagerB::WriteLock(Txn* txn, const Key& key) {
-
   // Initialize the deque if it doesn't exist
   LockRequest l(EXCLUSIVE, txn);
-  if (lock_table_.count(key))
+  if (lock_table_.count(key)) {
     lock_table_[key]->push_back(l);
-  else {
+  } else {
     deque<LockRequest> *my_queue = new deque<LockRequest>(1, l);
     lock_table_[key] = my_queue;
   }
 
-  if (lock_table_[key]->front().txn_ == txn)
+  if (lock_table_[key]->front().txn_ == txn) {
     // since it's the only transaction that wants the lock, say ok to start
     return true;
-  else {
+  } else {
     // initialize or increment the number of locks to wait for
     if (txn_waits_.count(txn))
       txn_waits_[txn] = 1;
-    else txn_waits_[txn]++;
+    else
+      txn_waits_[txn]++;
     return false;
   }
 }
 
 
 bool LockManagerB::ReadLock(Txn* txn, const Key& key) {
-
   // Make a new LockRequest
   LockRequest l(SHARED, txn);
 
@@ -132,11 +128,12 @@ bool LockManagerB::ReadLock(Txn* txn, const Key& key) {
   // Increment position in txn_waits_ if lock is not acquired
   deque<LockRequest> *requests = lock_table_[key];
   deque<LockRequest>::iterator i;
-  for (i=requests->begin(); i != requests->end(); i++) {
+  for (i = requests->begin(); i != requests->end(); i++) {
     if (i->mode_ == EXCLUSIVE) {
       if (txn_waits_.count(txn))
         txn_waits_[txn] = 1;
-      else txn_waits_[txn]++;
+      else
+        txn_waits_[txn]++;
       return false;
     }
   }
@@ -145,14 +142,12 @@ bool LockManagerB::ReadLock(Txn* txn, const Key& key) {
 
 
 void LockManagerB::Release(Txn* txn, const Key& key) {
-
   // Lock requests for the key
   deque<LockRequest> *requests = lock_table_[key];
 
   // Remove the txn from the requests list
   deque<LockRequest>::iterator i;
-  for (i=requests->begin(); i != requests->end(); i++) {
-
+  for (i = requests->begin(); i != requests->end(); i++) {
     // Transaction was found
     if (i->txn_ == txn) {
       if ((i+1) != requests->end()) {
@@ -161,7 +156,8 @@ void LockManagerB::Release(Txn* txn, const Key& key) {
         // _SE -> start E
         // _EE -> start E
         if (atStart && ((i+1)->mode_ == EXCLUSIVE)) {
-          if (--txn_waits_[(i+1)->txn_] == 0) ready_txns_->push_back((i+1)->txn_);
+          if (--txn_waits_[(i+1)->txn_] == 0)
+            ready_txns_->push_back((i+1)->txn_);
         }
 
         // _ES -> start longest substring of sses
@@ -170,21 +166,18 @@ void LockManagerB::Release(Txn* txn, const Key& key) {
           (atStart && (i+1)->mode_ == SHARED) ||
           ((!atStart && (i-1)->mode_ == SHARED) && ((i+1)->mode_ == SHARED)))) {
               deque<LockRequest>::iterator j;
-            for (j=i+1; j != requests->end() && j->mode_ == SHARED; j++)
+            for (j = i + 1; j != requests->end() && j->mode_ == SHARED; j++)
               if (--txn_waits_[j->txn_] == 0) ready_txns_->push_back(j->txn_);
         }
       }
       requests->erase(i);
       break;
     }
-
   }
-
 }
 
 
 LockMode LockManagerB::Status(const Key& key, vector<Txn*>* owners) {
-
   // Initialize owners vector
   owners->clear();
 
@@ -200,9 +193,8 @@ LockMode LockManagerB::Status(const Key& key, vector<Txn*>* owners) {
   // Fill the vector with transactions with shared locks
   deque<LockRequest>::iterator i;
   deque<LockRequest> *requests = lock_table_[key];
-  for (i=requests->begin(); i != requests->end() && i->mode_ == SHARED; i++) {
+  for (i = requests->begin(); i != requests->end() && i->mode_ == SHARED; i++) {
     owners->push_back(i->txn_);
   }
   return SHARED;
-  
 }
