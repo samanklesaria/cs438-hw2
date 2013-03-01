@@ -12,7 +12,7 @@
 
 class BankTxn : public Txn {
  public:
-  BankTxn(double time = 0) : time_(time) {
+  explicit BankTxn(double time = 0) : time_(time) {
     readset_ = {1};
     writeset_ = {1};
   }
@@ -88,24 +88,25 @@ TEST(PutTest) {
   TxnProcessor p(P_OCC);
   Txn* t;
 
-  map<long unsigned int, long unsigned int> m = {{1,2}, {3,4}, {5,6}, {7,8}};
+  map<unsigned int64, unsigned int64> m =
+    {{1, 2}, {3, 4}, {5, 6}, {7, 8}};
 
   p.NewTxnRequest(new Put(m));
   delete p.GetTxnResult();
 
-  map<long unsigned int, long unsigned int> nokey = {{2,2}};
+  map<unsigned int64, unsigned int64> nokey = {{2, 2}};
   p.NewTxnRequest(new Expect(nokey));  // Should abort (no key '2' exists)
   t = p.GetTxnResult();
   EXPECT_EQ(ABORTED, t->Status());
   delete t;
 
-  map<long unsigned int, long unsigned int> wrongval = {{1,1}};
+  map<unsigned int64, unsigned int64> wrongval = {{1, 1}};
   p.NewTxnRequest(new Expect(wrongval));  // Should abort (wrong value for key)
   t = p.GetTxnResult();
   EXPECT_EQ(ABORTED, t->Status());
   delete t;
 
-  map<long unsigned int, long unsigned int> ok = {{1,2}};
+  map<unsigned int64, unsigned int64> ok = {{1, 2}};
   p.NewTxnRequest(new Expect(ok));  // Should commit
   t = p.GetTxnResult();
   EXPECT_EQ(COMMITTED, t->Status());
@@ -115,11 +116,10 @@ TEST(PutTest) {
 }
 
 TEST(BasicBank) {
-
   TxnProcessor p(P_OCC);
   Txn* t;
 
-  map<long unsigned int, long unsigned int> m = {{1,0}};
+  map<unsigned int64, unsigned int64> m = {{1, 0}};
 
   p.NewTxnRequest(new Put(m));
   delete p.GetTxnResult();
@@ -138,27 +138,26 @@ TEST(BasicBank) {
 
   Sleep(5);
 
-  map<long unsigned int, long unsigned int> ok = {{1,5}};
+  map<unsigned int64, unsigned int64> ok = {{1, 5}};
   p.NewTxnRequest(new Expect(ok));  // Should commit
   t = p.GetTxnResult();
   EXPECT_EQ(COMMITTED, t->Status());
   delete t;
 
   END;
-
 }
 
 TEST(ShoppingTest) {
-
   TxnProcessor p(P_OCC);
   Txn* t;
 
-  map<long unsigned int, long unsigned int> m = {{1,3}, {2,0}, {3,0}, {4,0}, {5,0}, {6,0}, {7,0}, {8,0},};
+  map<unsigned int64, unsigned int64> m =
+    {{1, 3}, {2, 0}, {3, 0}, {4, 0}, {5, 0}, {6, 0}, {7, 0}, {8, 0}};
 
   p.NewTxnRequest(new Put(m));
   delete p.GetTxnResult();
 
-  p.NewTxnRequest(new Shopping(2,0.0001));
+  p.NewTxnRequest(new Shopping(2, 0.0001));
   p.NewTxnRequest(new Shopping(3, 0.001));
   p.NewTxnRequest(new Shopping(4, 0.01));
   p.NewTxnRequest(new Shopping(5, 0.1));
@@ -172,14 +171,13 @@ TEST(ShoppingTest) {
 
   Sleep(5);
 
-  map<long unsigned int, long unsigned int> ok = {{1,0}};
+  map<unsigned int64, unsigned int64> ok = {{1, 0}};
   p.NewTxnRequest(new Expect(ok));  // Should commit
   t = p.GetTxnResult();
   EXPECT_EQ(COMMITTED, t->Status());
   delete t;
 
   END;
-
 }
 
 
@@ -314,7 +312,6 @@ void Benchmark(const vector<LoadGen*>& lg) {
 }
 
 int main(int argc, char** argv) {
-
   vector<LoadGen *> lg;
 
   NoopTest();
